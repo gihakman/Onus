@@ -1,0 +1,7 @@
+{
+  "network": "testnet-bradbury",
+  "chainId": 4221,
+  "factory": "0x5675539785716cb56185602168755A6F956B0c31",
+  "feeBps": 200,
+  "deployedAt": "2026-07-06T15:04:28.905Z"
+}
