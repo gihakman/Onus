@@ -43,8 +43,15 @@ export function PactCard({
   const refresh = useCallback(async () => {
     try {
       setD(await getPactDetails(address));
+      setError(null);
     } catch (e: any) {
-      setError(e?.message ?? "Failed to load pact.");
+      const msg = String(e?.message ?? e ?? "");
+      // A pact whose deployment has not settled yet reads as "not found".
+      if (/not found|resource not found|-32001/i.test(msg)) {
+        setError("pending");
+      } else {
+        setError(msg || "Failed to load pact.");
+      }
     }
   }, [address]);
 
@@ -66,11 +73,19 @@ export function PactCard({
   }
 
   if (!d) {
+    const pending = error === "pending";
     return (
       <Card className="p-5">
-        <div className="font-mono text-xs text-ink-faint">{shortAddress(address)}</div>
+        <div className="flex items-center justify-between gap-3">
+          <span className="font-mono text-xs text-ink-faint">{shortAddress(address)}</span>
+          {pending && <Badge tone="neutral">Finalizing</Badge>}
+        </div>
         <div className="mt-2 text-sm text-ink-muted">
-          {error ?? "Loading pact…"}
+          {pending
+            ? "This pact is still being finalized on-chain. It will appear shortly. Try Refresh in a moment."
+            : error
+              ? "This pact could not be loaded right now. Try Refresh."
+              : "Loading pact…"}
         </div>
       </Card>
     );

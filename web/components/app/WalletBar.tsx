@@ -45,7 +45,8 @@ export function WalletBar({ onChange }: { onChange?: (addr: string | null) => vo
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-paper-raised p-4 shadow-card">
+    <div className="rounded-lg border border-line bg-paper-raised p-4 shadow-card">
+      <div className="flex flex-wrap items-center gap-3">
       <Badge tone="active">{BRADBURY.name}</Badge>
       {address ? (
         <>
@@ -82,6 +83,11 @@ export function WalletBar({ onChange }: { onChange?: (addr: string | null) => vo
           </div>
         </>
       )}
+      </div>
+      <p className="mt-2 text-xs text-ink-faint">
+        Onus uses a built-in Bradbury test account stored in your browser. There is no
+        external wallet to connect. Fund it from the faucet to create and settle pacts.
+      </p>
     </div>
   );
 }
