@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Container } from "@/components/ui/Layout";
-import { LinkButton } from "@/components/ui/Button";
 import { Logo, GitHubIcon } from "@/components/site/Brand";
+import { OpenAppButton } from "@/components/site/OpenAppButton";
 
 export const GITHUB_REPO = "https://github.com/gihakman/Onus";
 
@@ -44,9 +44,7 @@ export function Nav() {
           >
             <GitHubIcon size={20} />
           </a>
-          <LinkButton href="/app" variant="primary" className="px-3 py-2">
-            Open app
-          </LinkButton>
+          <OpenAppButton />
         </div>
       </Container>
     </header>
