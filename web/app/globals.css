@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --grid-line: rgba(16, 19, 23, 0.045);
+}
+
+html {
+  scroll-behavior: smooth;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  @apply bg-paper text-ink font-sans antialiased;
+}
+
+/* Editorial display headings */
+.display {
+  @apply font-serif tracking-tightish;
+  font-feature-settings: "liga" 1, "kern" 1;
+}
+
+/* Hairline section rule */
+.rule {
+  @apply border-t border-line;
+}
+
+/* Subtle paper grid used behind the hero */
+.paper-grid {
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: 40px 40px;
+  background-position: center;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, #000 40%, transparent 100%);
+}
+
+/* Anchor offset so section links are not hidden under the sticky nav */
+.anchor {
+  scroll-margin-top: 96px;
+}
+
+/* Prose defaults for documentation */
+.prose-onus {
+  @apply text-ink-soft leading-relaxed;
+}
+.prose-onus h2 {
+  @apply display text-ink text-2xl mt-12 mb-3;
+}
+.prose-onus h3 {
+  @apply font-semibold text-ink text-lg mt-8 mb-2;
+}
+.prose-onus p {
+  @apply my-4 max-w-prose;
+}
+.prose-onus code {
+  @apply font-mono text-[0.86em] bg-paper-sunken px-1.5 py-0.5 rounded-sm text-ink-soft;
+}
+.prose-onus ul {
+  @apply my-4 max-w-prose list-disc pl-5 space-y-2;
+}
