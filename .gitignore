@@ -1,0 +1,27 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv*
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Node / frontend
+node_modules/
+dist/
+.next/
+out/
+build/
+.vercel/
+next-env.d.ts
+
+# GenLayer / test artifacts
+artifacts/
+.gltest_cache/
+
+# Logs & OS
+*.log
+.DS_Store
