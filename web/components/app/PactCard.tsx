@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { Card, Badge } from "@/components/ui/Layout";
-import { BRADBURY } from "@/lib/config";
+import { BRADBURY, ONUS_ADDRESS } from "@/lib/config";
 import {
   attoToGen,
   genToAtto,
@@ -13,7 +13,7 @@ import {
   OUTCOME_LABEL,
 } from "@/lib/format";
 import {
-  getPactDetails,
+  getPact,
   fundPact,
   submitEvidence,
   resolvePact,
@@ -27,13 +27,7 @@ function outcomeTone(outcome: string): "evidence" | "partial" | "broken" | "neut
   return "neutral";
 }
 
-export function PactCard({
-  address,
-  viewer,
-}: {
-  address: string;
-  viewer: string | null;
-}) {
+export function PactCard({ id, viewer }: { id: number; viewer: string | null }) {
   const [d, setD] = useState<PactDetails | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -42,18 +36,12 @@ export function PactCard({
 
   const refresh = useCallback(async () => {
     try {
-      setD(await getPactDetails(address));
+      setD(await getPact(id));
       setError(null);
     } catch (e: any) {
-      const msg = String(e?.message ?? e ?? "");
-      // A pact whose deployment has not settled yet reads as "not found".
-      if (/not found|resource not found|-32001/i.test(msg)) {
-        setError("pending");
-      } else {
-        setError(msg || "Failed to load pact.");
-      }
+      setError(e?.message ?? "Failed to load pact.");
     }
-  }, [address]);
+  }, [id]);
 
   useEffect(() => {
     refresh();
@@ -73,26 +61,17 @@ export function PactCard({
   }
 
   if (!d) {
-    const pending = error === "pending";
     return (
       <Card className="p-5">
-        <div className="flex items-center justify-between gap-3">
-          <span className="font-mono text-xs text-ink-faint">{shortAddress(address)}</span>
-          {pending && <Badge tone="neutral">Finalizing</Badge>}
-        </div>
+        <div className="font-mono text-xs text-ink-faint">Pact #{id}</div>
         <div className="mt-2 text-sm text-ink-muted">
-          {pending
-            ? "This pact is still being finalized on-chain. It will appear shortly. Try Refresh in a moment."
-            : error
-              ? "This pact could not be loaded right now. Try Refresh."
-              : "Loading pact…"}
+          {error ? "Could not load this pact. Try Refresh." : "Loading pact…"}
         </div>
       </Card>
     );
   }
 
-  const isCommitter =
-    viewer && d.committer.toLowerCase() === viewer.toLowerCase();
+  const isCommitter = viewer && d.committer.toLowerCase() === viewer.toLowerCase();
   const canFund = isCommitter && d.status === "awaiting_funding";
   const canEvidence = isCommitter && d.status === "active";
   const canResolve = d.status === "active";
@@ -118,16 +97,20 @@ export function PactCard({
           </h3>
         </div>
         <a
-          href={`${BRADBURY.explorer}/contracts/${address}`}
+          href={`${BRADBURY.explorer}/contracts/${ONUS_ADDRESS ?? ""}`}
           target="_blank"
           rel="noreferrer"
           className="font-mono text-xs text-ink-faint hover:text-ink"
         >
-          {shortAddress(address)}
+          Pact #{d.id}
         </a>
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <div>
+          <dt className="text-xs uppercase tracking-wide text-ink-faint">Committer</dt>
+          <dd className="font-mono text-ink-soft">{shortAddress(d.committer)}</dd>
+        </div>
         <div>
           <dt className="text-xs uppercase tracking-wide text-ink-faint">Deadline</dt>
           <dd className="text-ink-soft">{d.deadline_iso}</dd>
@@ -136,7 +119,7 @@ export function PactCard({
           <dt className="text-xs uppercase tracking-wide text-ink-faint">Fee</dt>
           <dd className="text-ink-soft">{bpsToPercent(d.fee_bps)}</dd>
         </div>
-        <div className="col-span-2">
+        <div className="col-span-2 sm:col-span-4">
           <dt className="text-xs uppercase tracking-wide text-ink-faint">Criteria</dt>
           <dd className="text-ink-soft">{d.criteria}</dd>
         </div>
@@ -164,9 +147,7 @@ export function PactCard({
 
       {d.status === "resolved" && d.rationale && (
         <div className="mt-4 rounded border border-line bg-paper-sunken/60 p-3">
-          <div className="text-xs uppercase tracking-wide text-ink-faint">
-            Jury rationale
-          </div>
+          <div className="text-xs uppercase tracking-wide text-ink-faint">Jury rationale</div>
           <p className="mt-1 text-sm text-ink-soft">{d.rationale}</p>
           {d.outcome === "partial" && (
             <p className="mt-1 text-sm text-ink-muted">
@@ -190,9 +171,7 @@ export function PactCard({
               <span className="text-sm text-ink-muted">{BRADBURY.currency}</span>
               <Button
                 disabled={busy !== null}
-                onClick={() =>
-                  run("fund", () => fundPact(address, genToAtto(amount)))
-                }
+                onClick={() => run("fund", () => fundPact(id, genToAtto(amount)))}
                 className="px-3 py-2"
               >
                 {busy === "fund" ? "Funding…" : "Fund stake"}
@@ -214,7 +193,7 @@ export function PactCard({
                 disabled={busy !== null || evidenceUrl.trim() === ""}
                 onClick={() =>
                   run("evidence", async () => {
-                    await submitEvidence(address, evidenceUrl.trim());
+                    await submitEvidence(id, evidenceUrl.trim());
                     setEvidenceUrl("");
                   })
                 }
@@ -230,7 +209,7 @@ export function PactCard({
               <Button
                 variant="secondary"
                 disabled={busy !== null}
-                onClick={() => run("resolve", () => resolvePact(address))}
+                onClick={() => run("resolve", () => resolvePact(id))}
                 className="px-3 py-2"
               >
                 {busy === "resolve" ? "Resolving…" : "Resolve now"}

@@ -7,13 +7,13 @@ import { WalletBar } from "./WalletBar";
 import { PactCard } from "./PactCard";
 import { isConfigured, BRADBURY, DEFAULT_FEE_BPS } from "@/lib/config";
 import { bpsToPercent } from "@/lib/format";
-import { createPact, getAllPacts, getPactsBy } from "@/lib/genlayer";
+import { createPact, getAllPactIds, getPactsBy } from "@/lib/genlayer";
 
 export function OnusApp() {
   const configured = isConfigured();
   const [viewer, setViewer] = useState<string | null>(null);
-  const [mine, setMine] = useState<string[]>([]);
-  const [all, setAll] = useState<string[]>([]);
+  const [mine, setMine] = useState<number[]>([]);
+  const [all, setAll] = useState<number[]>([]);
   const [tab, setTab] = useState<"mine" | "all">("mine");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,8 +24,8 @@ export function OnusApp() {
     setError(null);
     try {
       const [a, m] = await Promise.all([
-        getAllPacts(),
-        viewer ? getPactsBy(viewer) : Promise.resolve<string[]>([]),
+        getAllPactIds(),
+        viewer ? getPactsBy(viewer) : Promise.resolve<number[]>([]),
       ]);
       setAll(a.reverse());
       setMine(m.reverse());
@@ -79,8 +79,8 @@ export function OnusApp() {
                 {error && <p className="mb-3 text-sm text-broken">{error}</p>}
 
                 <div className="space-y-4">
-                  {(tab === "mine" ? mine : all).map((addr) => (
-                    <PactCard key={addr} address={addr} viewer={viewer} />
+                  {(tab === "mine" ? mine : all).map((pid) => (
+                    <PactCard key={pid} id={pid} viewer={viewer} />
                   ))}
                   {(tab === "mine" ? mine : all).length === 0 && !loading && (
                     <Card className="p-6 text-sm text-ink-muted">
@@ -254,8 +254,8 @@ function NotConfigured() {
     <Card className="mt-8 p-8">
       <h2 className="text-lg font-semibold text-ink">App not configured yet</h2>
       <p className="mt-2 max-w-prose text-sm text-ink-muted">
-        The frontend needs a deployed PactFactory address. Deploy the contracts to{" "}
-        {BRADBURY.name} and set <code className="font-mono">NEXT_PUBLIC_ONUS_FACTORY</code>{" "}
+        The frontend needs a deployed Onus contract address. Deploy the contract to{" "}
+        {BRADBURY.name} and set <code className="font-mono">NEXT_PUBLIC_ONUS_ADDRESS</code>{" "}
         to the factory address, then reload this page.
       </p>
       <div className="mt-5 flex flex-wrap gap-3">

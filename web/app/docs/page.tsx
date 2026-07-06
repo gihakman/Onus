@@ -6,8 +6,8 @@ import { BRADBURY } from "@/lib/config";
 export const metadata: Metadata = {
   title: "Documentation · Onus",
   description:
-    "How the Onus contracts work: the PactFactory and Pact intelligent contracts, the " +
-    "adjudication flow, settlement, and how to deploy on Testnet Bradbury.",
+    "How the Onus contract works: the pact record model, the adjudication flow, " +
+    "settlement, and how to deploy on Testnet Bradbury.",
 };
 
 const toc = [
@@ -27,8 +27,9 @@ export default function DocsPage() {
         <Eyebrow>Documentation</Eyebrow>
         <h1 className="display text-4xl text-ink md:text-5xl">How Onus works.</h1>
         <p className="prose-onus mt-4 max-w-prose">
-          Onus is two intelligent contracts on GenLayer. This page explains what each
-          one owns, how a commitment is judged, and how to deploy your own instance.
+          Onus is a single intelligent contract on GenLayer. It stores every commitment
+          as a record, escrows each stake, and settles by validator consensus. This page
+          explains the model, how a commitment is judged, and how to deploy your own.
         </p>
 
         <div className="mt-12 grid gap-12 lg:grid-cols-[220px_1fr]">
@@ -52,22 +53,16 @@ export default function DocsPage() {
           <div className="prose-onus">
             <h2 id="architecture" className="anchor">Architecture</h2>
             <p>
-              The protocol is split into a deterministic coordinator and a per-commitment
-              contract. Subjective judgment lives only in the commitment contract, at the
-              single point where the stake is settled.
+              The protocol is one contract. It holds the protocol fee configuration, the
+              escrowed stakes, a reputation ledger of kept, partial, and broken counts per
+              address, and every pact as an on-chain record addressed by a numeric id.
             </p>
-            <ul>
-              <li>
-                <strong>PactFactory</strong> deploys and indexes commitments, holds the
-                protocol fee configuration, collects fees, and keeps a reputation ledger
-                of kept, partial, and broken counts per address. It contains no
-                non-deterministic logic.
-              </li>
-              <li>
-                <strong>Pact</strong> is deployed once per commitment. It holds the stake,
-                accepts evidence, runs the validator adjudication, and settles the funds.
-              </li>
-            </ul>
+            <p>
+              Keeping everything in a single contract makes each pact immediately
+              readable, keeps every action to one transaction, and places the escrow and
+              the verdict in the same place. Subjective judgment runs only at the single
+              point where a pact is resolved.
+            </p>
 
             <h2 id="lifecycle" className="anchor">Pact lifecycle</h2>
             <p>
@@ -82,9 +77,9 @@ export default function DocsPage() {
 
             <h2 id="adjudication" className="anchor">Adjudication and consensus</h2>
             <p>
-              When <code>resolve()</code> is called after the deadline, the leader fetches
-              each evidence URL with the browser renderer and judges it against the stored
-              criteria using a structured prompt. The verdict is one of{" "}
+              When <code>resolve(pact_id)</code> is called after the deadline, the leader
+              fetches each evidence URL with the browser renderer and judges it against the
+              stored criteria using a structured prompt. The verdict is one of{" "}
               <code>kept</code>, <code>partial</code>, or <code>broken</code>, with a
               basis-point split for partial results.
             </p>
@@ -99,8 +94,8 @@ export default function DocsPage() {
             <h2 id="settlement" className="anchor">Settlement</h2>
             <p>
               Once the jury agrees, settlement is deterministic arithmetic in atto-scale
-              GEN. A protocol fee in basis points is routed to the factory. The remainder
-              is paid out by outcome:
+              GEN. A protocol fee in basis points is retained by the contract for the
+              owner to withdraw. The remainder is paid out by outcome:
             </p>
             <ul>
               <li><strong>Kept</strong>: the net returns to the committer.</li>
@@ -109,21 +104,21 @@ export default function DocsPage() {
             </ul>
             <p>
               Payouts to external addresses use an EVM contract interface transfer that
-              executes on finalization. The pact then records its outcome in the factory.
+              executes on finalization, and the reputation ledger is updated in the same
+              transaction.
             </p>
 
             <h2 id="contract-api" className="anchor">Contract API</h2>
-            <h3>PactFactory</h3>
+            <h3>Write</h3>
             <ul>
-              <li><code>create_pact(beneficiary, commitment_text, criteria, deadline_iso)</code></li>
-              <li><code>set_pact_code(code)</code>, <code>set_fee_bps(bps)</code>, <code>withdraw_fees(to)</code> (owner)</li>
-              <li><code>get_pact_count()</code>, <code>get_all_pacts()</code>, <code>get_pacts_by(committer)</code></li>
-              <li><code>get_reputation(committer)</code>, <code>get_fee_bps()</code></li>
+              <li><code>create_pact(beneficiary, commitment_text, criteria, deadline_iso)</code> returns the pact id</li>
+              <li><code>fund(pact_id)</code> (payable), <code>submit_evidence(pact_id, url)</code>, <code>resolve(pact_id)</code></li>
+              <li><code>set_fee_bps(bps)</code>, <code>withdraw_fees(to)</code> (owner)</li>
             </ul>
-            <h3>Pact</h3>
+            <h3>Read</h3>
             <ul>
-              <li><code>fund()</code> (payable), <code>submit_evidence(url)</code>, <code>resolve()</code></li>
-              <li><code>get_details()</code>, <code>get_status()</code>, <code>get_evidence()</code>, <code>is_resolvable()</code></li>
+              <li><code>get_pact(pact_id)</code>, <code>get_pact_count()</code>, <code>get_all_pact_ids()</code></li>
+              <li><code>get_pacts_by(committer)</code>, <code>get_reputation(committer)</code>, <code>get_fee_bps()</code></li>
             </ul>
 
             <h2 id="deploy" className="anchor">Deploy on Bradbury</h2>
@@ -138,24 +133,23 @@ export default function DocsPage() {
               <li><code>npm run deploy:bradbury</code></li>
             </ul>
             <p>
-              The script deploys the factory, uploads the Pact runner code with{" "}
-              <code>set_pact_code</code>, and writes the resulting address to{" "}
+              The script deploys the contract and writes its address to{" "}
               <code>deploy/deployments.bradbury.json</code>. Point the frontend at it with{" "}
-              <code>NEXT_PUBLIC_ONUS_FACTORY</code>.
+              <code>NEXT_PUBLIC_ONUS_ADDRESS</code>.
             </p>
 
             <h2 id="source" className="anchor">Source and tooling</h2>
             <p>
-              Contracts are validated with the GenVM linter and typechecker, covered by
-              fast direct-mode tests, and exercised end to end by integration tests
-              against a live environment.
+              The contract is validated with the GenVM linter and typechecker, covered by
+              fast direct-mode tests, and exercised end to end by integration tests against
+              a live environment.
             </p>
             <div className="mt-6 flex flex-wrap gap-3 not-prose">
               <LinkButton href="https://docs.genlayer.com" external variant="secondary">
                 GenLayer documentation
               </LinkButton>
-              <LinkButton href="https://github.com/genlayerlabs" external variant="ghost">
-                GenLayer on GitHub
+              <LinkButton href="https://github.com/gihakman/Onus" external variant="ghost">
+                Source on GitHub
               </LinkButton>
             </div>
           </div>
