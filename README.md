@@ -37,9 +37,9 @@ GenLayer validators, and the vault is the same contract that renders the verdict
 4. **Resolve by consensus.** After the deadline, anyone can trigger resolution. Each
    validator independently reads the evidence, judges it against the criteria, and
    agrees on the outcome.
-5. **Settle and appeal.** The contract pays out deterministically: kept returns the
-   stake, broken forfeits it, partial splits it. Either side can appeal within the
-   finality window.
+5. **Settle.** The contract pays out deterministically: kept returns the stake,
+   broken forfeits it, partial splits it. The protocol fee is accounted separately
+   from escrowed principal and can be withdrawn only by the owner.
 
 ## Live deployment
 
@@ -47,7 +47,7 @@ GenLayer validators, and the vault is the same contract that renders the verdict
 |---|---|
 | Network | Testnet Bradbury |
 | Chain ID | 4221 |
-| Onus contract | [`0xFB5fD0ee9a7F7A93cdC2e4FE3626d2d1fc880b4B`](https://explorer-bradbury.genlayer.com/contracts/0xFB5fD0ee9a7F7A93cdC2e4FE3626d2d1fc880b4B) |
+| Onus contract | [`0xa6F8f5B93e8b341599C9f0D448050cdCbe0BF712`](https://explorer-bradbury.genlayer.com/contracts/0xa6F8f5B93e8b341599C9f0D448050cdCbe0BF712) |
 | Protocol fee | 2% (200 bps) |
 | Explorer | [explorer-bradbury.genlayer.com](https://explorer-bradbury.genlayer.com) |
 | Faucet | [testnet-faucet.genlayer.foundation](https://testnet-faucet.genlayer.foundation) |
@@ -75,6 +75,17 @@ by a numeric id, escrows each stake, holds the protocol fee configuration, and k
 reputation ledger of kept, partial, and broken counts per address. Subjective judgment
 runs only at the point where a pact is resolved. Keeping everything in one contract makes
 each pact immediately readable and keeps every action to a single transaction.
+
+A few invariants worth stating explicitly:
+
+- **Fees are separated from principal.** Each settlement accrues the protocol fee into a
+  dedicated `accumulated_fees` counter; `withdraw_fees` pays out only that counter, never
+  `self.balance`, so an owner can never withdraw a pact's escrowed stake.
+- **Consensus is on the exact payout.** Partial verdicts are quantized to a 500 bps (5%)
+  grid and validators must agree on the exact grid value — there is no tolerance band, so
+  agreeing validators settle on one payout fraction.
+- **One runtime time source.** Every deadline check reads `gl.message_raw["datetime"]`,
+  the GenVM transaction timestamp, rather than host wall-clock time.
 
 ```
 contracts/
@@ -125,15 +136,16 @@ The web app lives in `web/`. Import the repository in Vercel and set:
 
 - **Root Directory:** `web`
 - **Environment variables:**
-  - `NEXT_PUBLIC_ONUS_ADDRESS` = `0xFB5fD0ee9a7F7A93cdC2e4FE3626d2d1fc880b4B`
+  - `NEXT_PUBLIC_ONUS_ADDRESS` = `0xa6F8f5B93e8b341599C9f0D448050cdCbe0BF712`
   - `NEXT_PUBLIC_ONUS_FEE_BPS` = `200`
 
 ## Security
 
 The stake is held by the contract, never by an operator. Payouts happen only through the
 resolve path, in proportion to the verdict. Consensus requires validators to agree on the
-qualitative outcome, and contested results can be escalated through the protocol finality
-window. Wallet keys stay in a local `.env` that is never committed.
+exact quantized payout fraction, and protocol fees are tracked in a dedicated counter so
+escrow principal cannot be withdrawn as fees. Wallet keys stay in a local `.env` that is
+never committed.
 
 ## License
 

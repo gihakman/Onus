@@ -35,7 +35,13 @@ OUTCOME_BROKEN = "broken"
 BPS_DENOMINATOR = 10000
 MAX_EVIDENCE_ITEMS = 20
 MAX_CONTENT_CHARS = 4000
-PARTIAL_BPS_TOLERANCE = 1500
+# Partial verdicts are quantized to this grid (in basis points) before consensus.
+# The grid sets the payout granularity (5% steps) and lets validators reach consensus
+# on the *exact* payout fraction rather than merely "within a band": every validator
+# rounds the model's raw estimate to the same grid value, so agreement is exact.
+PARTIAL_BPS_GRID = 500
+PARTIAL_BPS_MIN = PARTIAL_BPS_GRID        # a partial verdict never equals "broken" (0)
+PARTIAL_BPS_MAX = BPS_DENOMINATOR - PARTIAL_BPS_GRID  # ...nor "kept" (10000)
 
 
 @gl.evm.contract_interface
@@ -82,7 +88,15 @@ def _parse_iso_to_unix(iso: str) -> int:
 
 
 def _now_unix() -> int:
-    return int(datetime.now(timezone.utc).timestamp())
+    """Current time as a unix timestamp, from the GenVM runtime transaction clock.
+
+    The runtime supplies each transaction's timestamp as ``gl.message_raw["datetime"]``
+    (an ISO 8601 string). That is the consensus-deterministic, runtime-supported source
+    of "now" — unlike ``datetime.now()``, which is host wall-clock time and is not
+    guaranteed reproducible across validators. Every deadline comparison in the contract
+    goes through this helper so there is a single time source to audit.
+    """
+    return _parse_iso_to_unix(str(gl.message_raw["datetime"]))
 
 
 def _clean_json_object(text: str) -> dict:
@@ -97,6 +111,31 @@ def _clean_json_object(text: str) -> dict:
     if not isinstance(parsed, dict):
         raise gl.vm.UserError(f"{ERROR_LLM} model response was not a JSON object")
     return parsed
+
+
+def _quantize_partial_bps(raw_bps: int) -> int:
+    """Round a raw partial fraction onto the consensus grid, kept strictly partial.
+
+    Snaps to the nearest ``PARTIAL_BPS_GRID`` step and clamps to the interior of the
+    partial range, so a partial verdict can never collapse into "broken" (0) or
+    "kept" (10000) — those are separate outcomes the model must name explicitly.
+    """
+    q = (int(raw_bps) + PARTIAL_BPS_GRID // 2) // PARTIAL_BPS_GRID * PARTIAL_BPS_GRID
+    return max(PARTIAL_BPS_MIN, min(PARTIAL_BPS_MAX, q))
+
+
+def _effective_bps(outcome: str, partial_bps: int) -> int:
+    """A single comparable payout fraction for any outcome.
+
+    ``kept -> 10000``, ``broken -> 0``, ``partial -> its (already quantized) bps``.
+    Consensus compares this value exactly across validators, so two validators agree
+    on the precise fraction of the stake that returns to the committer.
+    """
+    if outcome == OUTCOME_KEPT:
+        return BPS_DENOMINATOR
+    if outcome == OUTCOME_BROKEN:
+        return 0
+    return int(partial_bps)
 
 
 def _normalize_verdict(raw: dict) -> dict:
@@ -116,7 +155,9 @@ def _normalize_verdict(raw: dict) -> dict:
             partial_bps = int(round(float(str(raw_bps).strip())))
         except (ValueError, TypeError):
             raise gl.vm.UserError(f"{ERROR_LLM} partial verdict missing numeric partial_bps")
-        partial_bps = max(1, min(BPS_DENOMINATOR - 1, partial_bps))
+        # Quantize to the consensus grid so the stored/settled fraction is the exact
+        # value every agreeing validator converged on.
+        partial_bps = _quantize_partial_bps(partial_bps)
     rationale = str(raw.get("rationale", raw.get("reasoning", ""))).strip()
     return {"outcome": outcome, "partial_bps": partial_bps, "rationale": rationale[:1000]}
 
@@ -155,12 +196,17 @@ class Onus(gl.Contract):
     kept_count: TreeMap[Address, u256]
     partial_count: TreeMap[Address, u256]
     broken_count: TreeMap[Address, u256]
+    # Fees accrued from settled pacts, tracked explicitly so the owner can withdraw
+    # only protocol fees — never the principal of a pact stake still escrowed in the
+    # contract. self.balance includes live stakes, so it must not be the withdrawal basis.
+    accumulated_fees: u256
 
     def __init__(self, fee_bps: int):
         if fee_bps < 0 or fee_bps > BPS_DENOMINATOR:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} fee_bps out of range")
         self.owner = gl.message.sender_address
         self.fee_bps = u256(fee_bps)
+        self.accumulated_fees = u256(0)
 
     # --------------------------------------------------------------------------------
     # Create & fund
@@ -286,16 +332,19 @@ class Onus(gl.Contract):
             leader = leader_res.calldata
             if not isinstance(leader, dict):
                 return False
-            if str(leader.get("outcome")) != own["outcome"]:
+            # Consensus requires exact agreement on the *payout fraction*: each
+            # validator quantizes its own verdict to the same grid, then the two
+            # effective bps must be equal. There is no tolerance band — agreeing
+            # validators settle on one exact number (the leader's, which is what
+            # _settle uses), which is what "consensus on the exact payout" means.
+            try:
+                leader_eff = _effective_bps(
+                    str(leader.get("outcome")), int(leader.get("partial_bps"))
+                )
+            except (ValueError, TypeError):
                 return False
-            if own["outcome"] == OUTCOME_PARTIAL:
-                try:
-                    leader_bps = int(leader.get("partial_bps"))
-                except (ValueError, TypeError):
-                    return False
-                if abs(leader_bps - own["partial_bps"]) > PARTIAL_BPS_TOLERANCE:
-                    return False
-            return True
+            own_eff = _effective_bps(own["outcome"], own["partial_bps"])
+            return leader_eff == own_eff
 
         return gl.vm.run_nondet(leader_fn, validator_fn)
 
@@ -311,7 +360,10 @@ class Onus(gl.Contract):
         else:
             to_committer = net * int(p.partial_bps) // BPS_DENOMINATOR
             to_beneficiary = net - to_committer
-        # The protocol fee simply remains in this contract for the owner to withdraw.
+        # Account the protocol fee explicitly. Only `net` is paid out to the parties;
+        # the fee stays escrowed under accumulated_fees until the owner withdraws it.
+        # This separates accrued fees from any pact principal still held by the contract.
+        self.accumulated_fees = u256(int(self.accumulated_fees) + fee)
         if to_committer > 0:
             _Payee(p.committer).emit_transfer(value=u256(to_committer))
         if to_beneficiary > 0:
@@ -338,10 +390,17 @@ class Onus(gl.Contract):
     @gl.public.write
     def withdraw_fees(self, to: str) -> None:
         self._only_owner()
-        amount = self.balance
-        if amount == u256(0):
+        fees = int(self.accumulated_fees)
+        if fees <= 0:
             raise gl.vm.UserError(f"{ERROR_EXPECTED} no fees to withdraw")
-        _Payee(Address(to)).emit_transfer(value=amount)
+        # Withdraw only accrued fees, never pact principal. Cap at the realized
+        # balance in case deferred payouts have temporarily reduced it below the
+        # accrued counter; the remainder stays accrual and is withdrawable later.
+        amount = min(fees, int(self.balance))
+        if amount <= 0:
+            raise gl.vm.UserError(f"{ERROR_EXPECTED} no fees to withdraw")
+        self.accumulated_fees = u256(fees - amount)
+        _Payee(Address(to)).emit_transfer(value=u256(amount))
 
     # --------------------------------------------------------------------------------
     # Views
@@ -396,6 +455,10 @@ class Onus(gl.Contract):
     @gl.public.view
     def get_fee_bps(self) -> int:
         return int(self.fee_bps)
+
+    @gl.public.view
+    def get_accumulated_fees(self) -> int:
+        return int(self.accumulated_fees)
 
     @gl.public.view
     def get_owner(self) -> str:

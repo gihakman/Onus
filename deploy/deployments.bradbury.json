@@ -1,7 +1,7 @@
 {
   "network": "testnet-bradbury",
   "chainId": 4221,
-  "onus": "0xFB5fD0ee9a7F7A93cdC2e4FE3626d2d1fc880b4B",
+  "onus": "0xa6F8f5B93e8b341599C9f0D448050cdCbe0BF712",
   "feeBps": 200,
-  "deployedAt": "2026-07-06T18:16:33.074Z"
+  "deployedAt": "2026-07-30T21:21:03.801Z"
 }
